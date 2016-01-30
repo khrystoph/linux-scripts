@@ -1,0 +1,124 @@
+find unique IP addresses:
+cat netstat.log | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' | sort | uniq -c | sort -nrk1 | head -15
+
+Low Disk:
+FS='/';NUMRESULTS=20;resize;clear;date;df -h $FS; echo "Largest Directories:";\
+du -x $FS 2>/dev/null| sort -rnk1| head -n $NUMRESULTS| awk '{printf "%d MB %s\n",\
+$1/1024,$2}';echo "Largest Files:"; nice -n 19 find $FS -mount -type f -size +100M -ls \
+2>/dev/null| sort -rnk7| head -n $NUMRESULTS|awk '{printf "%d MB\t%s\n",\
+($7/1024)/1024,$NF}'
+
+Non Size restrictive low disk:
+FS='/';NUMRESULTS=20;resize;clear;date;df -h $FS; echo "Largest Directories:";\
+du -x $FS 2>/dev/null| sort -rnk1| head -n $NUMRESULTS| awk '{printf "%d MB %s\n",\
+$1/1024,$2}';echo "Largest Files:"; nice -n 19 find $FS -mount -type f -ls \
+2>/dev/null| sort -rnk7| head -n $NUMRESULTS|awk '{printf "%d MB\t%s\n",\
+($7/1024)/1024,$NF}'
+
+FS='/';NUMRESULTS=10;resize;clear;date;df -h $FS; echo "Largest Files:";\
+nice -n 19 find $FS -mount -size +10000k -type f -ls \
+2>/dev/null| sort -rnk7| head -n $NUMRESULTS|awk '{printf "%d MB\t%s\n",\
+($7/1024)/1024,$NF}'
+
+Netstat to grab listen ports
+netstat -nutlp|awk -F'[ /]+' '/tcp/ {print $8,$1,$4}'|sort|column -t > netstat.pre
+
+Sar scripts to make things look nice for the customer:
+sar -r | head -3 && sar -r | tail -11
+sar -B | head -3 && sar -B | tail -11
+sar -q | head -3 && sar -q | tail -11
+sar -S | head -3 && sar -S | tail -11
+sar -q | head -3 && sar -q | tail -11
+sar -u | head -3 && sar -u | tail -11
+
+One-liner for apache time_wait connections:
+for i in {1..20}; do echo "At $(head -1 netstat.log.$i), there were $(grep -i :3306 netstat.log.$i | grep -ic time_wait) time_wait connections to mysql."; done;
+
+Memory ballooning check:
+RHEL6:
+mount -t debugfs none /sys/kernel/debug ; grep current: /sys/kernel/debug/vmmemctl | awk '{sum=$2*4096/1048576} {print sum " MB"}' ; umount /sys/kernel/debug
+RHEL 5:
+grep current: /proc/vmmemctl | awk '{sum=$2*4096/1048576} {print sum " MB"}'
+VMware ESXi toolbox command:
+vmware-toolbox-cmd stat balloon
+
+Mass create user accounts and assign password:
+useradd test2 && echo <password> | passwd test2 --stdin
+
+Copy and truncate log file while open:
+i=/home/user/catalina.out;gzip -9 -c $i> $i-`date +%F`.gz && echo > $i
+
+Remove mail from a mail queue of a user@domain (Postfix):
+mailq | tail -n +2 | awk 'BEGIN { RS = "" } / user@host\.com$/ { print $1 }' | tr -d '*!' | postsuper -d - 
+
+finds the mac address of a server you have the ip address
+arp -a | grep ipaddress
+
+Adjust java settings:
+jcontrol
+
+perform a command at a specific time:
+at hh:mm Monthabbrev day#
+at>put commands
+at>on each line
+at>finish with ctrl+D
+
+Find a file of a specific name and append lines to the file:
+find /data/vhosts/ -name robots.txt -type f -exec sh -c "echo '### Customer issue here ###\n\nUser-agent: *\nDisallow: /print-ad/\n\n##############\n' >> {}" \;
+
+for i in $(locate robots.txt); do sh -c "echo '\n\n### Customer issue here ###\n\nUser-agent: *\nDisallow: /print-ad/\n\n#########################\n' >> $i"; done;
+
+Sed one-liners (-i denotes in-place replacement):
+sed -i 's/name="cluster">/name="gfs2-cluster">/' cluster.conf
+
+mysql get size of database:
+select sum(index_length+data_length)/1024/1024/1024,count(engine) from information_schema.tables;
+OR:
+select sum(index_length+data_length)/1024/1024/1024,count(engine) from information_schema.tables where table=''; //this gets the size of one specific database instead of all databases
+
+Java:
+ps -C java -L -o cmd,pcpu,pmem,ruser,thcount,etime,cputime,pid
+ps -C java -L -o cmd,pcpu,pmem,ruser,thcount,etime,cputime,pid | wc -l
+
+Gzip entire directory:
+for i in $(ls); do gzip $i; done;
+
+Check if node interleaving is enabled. If it is, good, if not, numa is enabled...should be disabled:
+omreport chassis biossetup |grep -A1 "Node Interleaving"
+
+MYSQL USEFUL QUERIES:
+SELECT table_schema "Database", sum( data_length + index_length ) / 1024 / 1024 "Data     Base Size in MB"  FROM information_schema.TABLES GROUP BY table_schema; //checks ibdata free tablespace. Compare this with the OS given size of ibdata1
+SELECT ENGINE, COUNT(ENGINE) '# of Tables', SUM(DATA_LENGTH) / 1024 / 1024 'Data Size in MB', SUM(index_length) / 1024 / 1024 'Index Size in MB' FROM information_schema.TABLES GROUP BY ENGINE; //this selects and grabs all table size information for each engine and outputs in a table format
+
+
+###############################Do Not Copy these to customer servers###################################
+First, we need to convert every schema except for archived tables.  Grab a list
+of those tables:
+#> table_modify=;mysql -BNe "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = '$table_modify' OR TABLE_SCHEMA = 'movabletype' OR TABLE_SCHEMA = 'wordpress' AND ENGINE = 'MyISAM';" | sed -e 's#\t#.#g' > tables-not-archive
+#> for i in $(cat tables-not-archive); do mysql -e "ALTER TABLE $i ENGINE=InnoDB;"; done
+
+5.13) Check to ensure all tables converted and there are no errors
+#> tail -50 /var/log/mysqld.log
+#> table_modify;mysql -BNe "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = '$table_modify' OR TABLE_SCHEMA = 'movabletype' OR TABLE_SCHEMA = 'wordpress' AND ENGINE = 'MyISAM';"
+			// Last command should return nothing
+			
+5.14) Now we convert larger table as it will take quite a while
+#> table_modify=;mysql -BNe "SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA = 'table_modify' AND ENGINE = 'MyISAM';" > tables-archive
+#> for i in $(cat tables-archive); do mysql -e "ALTER TABLE $i ENGINE=InnoDB;"; done
+#######################################################################################################
+
+Swap Script:
+echo "=== Highest Swap Usage ==="; for PID in $(ps -ef | awk '{print $2}'); do if [ -f /proc/$PID/smaps ]; then echo -n "PID [$PID] Process [`ps -p $PID -o comm --no-headers`]: "; grep ^Swap /proc/$PID/smaps | awk '{sum+=$2}END{print sum/1024" MB"}'; fi; done | sort -nrk5 | head -n 20 | column -t
+
+Network Commands:
+ip a //this shows all ip addresses assigned to all interfaces
+ip addr show <link name> //this gets the shorter list of ips assigned to an interface
+
+Hot Disk Addition/LUN addition:
+for i in /sys/class/scsi_host/host*/scan;do echo "- - -"> $i;done
+
+Hot Disk Expansion/LUN expansion:
+for i in /sys/block/*/device/rescan;do echo 1 > $i;done //you can also replace the wildcard with {devices} as needed
+
+Bash script to check number of pids on a specific day of rs-sysmon logs:
+for i in /var/log/rs-sysmon/ps.log.{1..143};do if [ "$(head -1 $i |cut -d_ -f1)" != "2014-11-19" ] ; then echo "At $(head -1 $i), there were $(grep -ic httpd $i) httpd pids."; fi;done
